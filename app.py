@@ -2,6 +2,9 @@ import os
 import pickle
 import streamlit as st
 from streamlit_option_menu import option_menu
+import requests
+from geopy.geocoders import Nominatim
+from geopy.distance import geodesic
 
 # ===================== PAGE CONFIG =====================
 st.set_page_config(
@@ -10,12 +13,231 @@ st.set_page_config(
     page_icon="🧑‍⚕️"
 )
 
+# ===================== SMOOTH FADE ANIMATION =====================
+st.markdown("""
+<style>
+.fade-in {
+    animation: fadeIn 0.8s ease-in;
+}
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+</style>
+""", unsafe_allow_html=True)
+
+# ===================== DISCLAIMER =====================
+st.warning("⚠️ This system is for educational purposes only and does NOT replace professional medical advice.")
+
 # ===================== LOAD MODELS =====================
 working_dir = os.path.dirname(os.path.abspath(__file__))
 
 diabetes_model = pickle.load(open(f'{working_dir}/saved_models/diabetes_model.sav', 'rb'))
 heart_disease_model = pickle.load(open(f'{working_dir}/saved_models/heart_disease_model.sav', 'rb'))
 parkinsons_model = pickle.load(open(f'{working_dir}/saved_models/parkinsons_model.sav', 'rb'))
+
+# ===================== ANIMATED RISK BAR =====================
+def show_risk_bar(risk):
+    if risk <= 30:
+        color = "#2ECC71"
+    elif risk <= 60:
+        color = "#F1C40F"
+    else:
+        color = "#E74C3C"
+
+    st.markdown(f"""
+    <div style="background-color:#eee;border-radius:20px;padding:4px;">
+        <div style="
+            width:{risk}%;
+            background-color:{color};
+            padding:10px;
+            border-radius:20px;
+            text-align:center;
+            color:white;
+            font-weight:bold;
+            transition: width 1.2s ease-in-out;">
+            {risk:.1f}%
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+# ===================== LOCATION INPUT =====================
+st.sidebar.subheader("📍 Location Details")
+city = st.sidebar.text_input("Enter Your City for Nearby Hospitals")
+
+# ===================== SPECIALIST MAPPING =====================
+def get_specialist(disease):
+    mapping = {
+        "Diabetes": "Diabetologist",
+        "Heart Disease": "Cardiologist",
+        "Parkinson": "Neurologist"
+    }
+    return mapping.get(disease, "General Physician")
+
+# ===================== HOLISTIC THERAPY MODULES =====================
+def show_color_therapy(disease):
+    color_map = {
+        "Diabetes": "#3498DB",
+        "Heart Disease": "#2ECC71",
+        "Parkinson": "#9B59B6"
+    }
+    color = color_map.get(disease, "#95A5A6")
+
+    st.markdown(f"""
+    <div style="background-color:{color};padding:20px;border-radius:12px;">
+    <h3 style="color:white;">🌈 Colour Therapy</h3>
+    <p style="color:white;">
+    Focus on this calming colour for 3–5 minutes.
+    Practice deep breathing: Inhale 4 sec → Hold 4 sec → Exhale 4 sec.
+    </p>
+    </div>
+    """, unsafe_allow_html=True)
+
+def show_acupressure(disease):
+    points = {
+        "Diabetes": "SP6 (Inner leg – 4 fingers above ankle)",
+        "Heart Disease": "PC6 (Inner wrist – 3 fingers below palm)",
+        "Parkinson": "GV20 (Top center of head)"
+    }
+    st.subheader("🖐 Acupressure Guidance")
+    st.info(f"Suggested Point: {points.get(disease)}")
+    st.write("Apply gentle pressure for 1–2 minutes while breathing slowly.")
+
+def show_lifestyle(disease):
+    st.subheader("🧘 Lifestyle Recommendations")
+
+    if disease == "Diabetes":
+        st.write("• 🚶 30 min brisk walking daily")
+        st.write("• 🥗 Reduce sugar & refined carbs")
+        st.write("• 💧 Stay hydrated")
+
+    elif disease == "Heart Disease":
+        st.write("• 🏃 Light cardio exercise")
+        st.write("• 🥑 Low saturated fat diet")
+        st.write("• 🧘 Stress reduction practices")
+
+    elif disease == "Parkinson":
+        st.write("• 🧘 Balance & coordination exercises")
+        st.write("• 🥦 Anti-inflammatory diet")
+        st.write("• 💤 Maintain regular sleep routine")
+
+def show_therapy_modules(disease):
+    st.markdown("---")
+    st.header("🌿 Holistic Therapy Support")
+    show_color_therapy(disease)
+    show_acupressure(disease)
+    show_lifestyle(disease)
+
+# ===================== GET COORDINATES =====================
+def get_coordinates(city):
+    try:
+        geolocator = Nominatim(user_agent="health_app")
+        location = geolocator.geocode(city)
+        if location:
+            return location.latitude, location.longitude
+    except:
+        pass
+    return None, None
+
+# ===================== GET NEARBY HOSPITALS =====================
+def get_nearby_hospitals(lat, lon):
+    overpass_urls = [
+        "https://overpass-api.de/api/interpreter",
+        "https://overpass.kumi.systems/api/interpreter"
+    ]
+
+    query = f"""
+    [out:json][timeout:25];
+    (
+      node["amenity"~"hospital|clinic|doctors"](around:15000,{lat},{lon});
+      way["amenity"~"hospital|clinic|doctors"](around:15000,{lat},{lon});
+      relation["amenity"~"hospital|clinic|doctors"](around:15000,{lat},{lon});
+    );
+    out center;
+    """
+
+    data = None
+    for url in overpass_urls:
+        try:
+            response = requests.post(url, data=query, timeout=30)
+            if response.status_code == 200:
+                data = response.json()
+                break
+        except:
+            continue
+
+    if not data:
+        st.error("⚠ Overpass server busy. Please try again later.")
+        return []
+
+    hospitals = []
+    for element in data.get('elements', []):
+        tags = element.get('tags', {})
+        name = tags.get('name', 'N/A')
+        phone = tags.get('phone') or tags.get('contact:phone') or "Not Available"
+        address = (
+            tags.get('addr:full') or
+            tags.get('addr:street') or
+            tags.get('addr:city') or
+            "Address Not Available"
+        )
+
+        if 'lat' in element:
+            hospital_location = (element['lat'], element['lon'])
+        else:
+            hospital_location = (element['center']['lat'], element['center']['lon'])
+
+        distance = geodesic((lat, lon), hospital_location).km
+
+        hospitals.append({
+            "name": name,
+            "phone": phone,
+            "address": address,
+            "distance": round(distance, 2),
+            "lat": hospital_location[0],
+            "lon": hospital_location[1]
+        })
+
+    hospitals = sorted(hospitals, key=lambda x: x['distance'])
+    return hospitals[:8]
+
+# ===================== SHOW HOSPITALS =====================
+def show_hospitals_if_needed(disease, risk, city):
+    if risk > 60 and city:
+
+        specialist = get_specialist(disease)
+        st.info(f"👨‍⚕ Recommended Specialist: {specialist}")
+
+        lat, lon = get_coordinates(city)
+
+        if lat and lon:
+            with st.spinner("🔍 Searching nearby healthcare centers..."):
+                hospitals = get_nearby_hospitals(lat, lon)
+
+            if hospitals:
+                st.subheader("🏥 Nearby Healthcare Centers (15km radius)")
+                st.success("💡 Click 'Open in Google Maps' to view ratings & full details.")
+
+                for hospital in hospitals:
+                    maps_link = f"https://www.google.com/maps/search/?api=1&query={hospital['lat']},{hospital['lon']}"
+                    directions_link = f"https://www.google.com/maps/dir/?api=1&destination={hospital['lat']},{hospital['lon']}"
+
+                    st.markdown(f"""
+                    ---
+                    ### 🏥 {hospital['name']}
+                    📍 Distance: **{hospital['distance']} km**  
+                    🏠 Address: {hospital['address']}  
+                    ☎ Contact: {hospital['phone']}  
+                    🔗 [Open in Google Maps]({maps_link})  
+                    🧭 [Get Directions]({directions_link})
+                    """)
+
+            else:
+                st.warning("No hospitals found nearby.")
+        else:
+            st.error("City not found. Please enter a valid city name.")
+
+        show_therapy_modules(disease)
 
 # ===================== SIDEBAR =====================
 with st.sidebar:
@@ -27,12 +249,10 @@ with st.sidebar:
         default_index=0
     )
 
-# =====================================================
-# ================= DIABETES PAGE =====================
-# =====================================================
+# ===================== DIABETES PAGE =====================
 if selected == 'Diabetes Prediction':
 
-    st.title('Diabetes Prediction using Hybrid ML')
+    st.markdown('<div class="fade-in"><h1>Diabetes Prediction using Hybrid ML</h1></div>', unsafe_allow_html=True)
 
     col1, col2, col3 = st.columns(3)
 
@@ -64,29 +284,24 @@ if selected == 'Diabetes Prediction':
         except:
             risk = 100 if prediction == 1 else 0
 
-        # ---------- HYBRID RULE OVERRIDE ----------
         if float(Glucose) > 160 and float(BMI) > 30:
             risk = max(risk, 75)
 
-        st.subheader(f"Diabetes Risk Score: {risk:.2f}%")
+        st.subheader("Diabetes Risk Score")
+        show_risk_bar(risk)
 
         if risk > 60:
             st.error("High Risk of Diabetes")
-            st.warning("⚠️ Diabetes can increase Heart and Kidney disease risk.")
+            show_hospitals_if_needed("Diabetes", risk, city)
         elif risk > 30:
             st.warning("Moderate Risk of Diabetes")
         else:
             st.success("Low Risk of Diabetes")
 
-        if risk < 50:
-            st.info("ℹ️ Low confidence prediction. Doctor consultation recommended.")
-
-# =====================================================
-# =============== HEART DISEASE PAGE ==================
-# =====================================================
+# ===================== HEART PAGE =====================
 if selected == 'Heart Disease Prediction':
 
-    st.title('Heart Disease Prediction using Hybrid ML')
+    st.markdown('<div class="fade-in"><h1>Heart Disease Prediction using Hybrid ML</h1></div>', unsafe_allow_html=True)
 
     col1, col2, col3 = st.columns(3)
 
@@ -123,29 +338,24 @@ if selected == 'Heart Disease Prediction':
         except:
             risk = 100 if prediction == 1 else 0
 
-        # ---------- HYBRID RULE OVERRIDE ----------
         if float(age) > 45 and float(trestbps) > 140 and float(chol) > 240:
             risk = max(risk, 80)
 
-        st.subheader(f"Heart Disease Risk Score: {risk:.2f}%")
+        st.subheader("Heart Disease Risk Score")
+        show_risk_bar(risk)
 
         if risk > 60:
             st.error("High Risk of Heart Disease")
-            st.warning("⚠️ Elevated cardiac risk may lead to stroke.")
+            show_hospitals_if_needed("Heart Disease", risk, city)
         elif risk > 30:
             st.warning("Moderate Risk of Heart Disease")
         else:
             st.success("Low Risk of Heart Disease")
 
-        if risk < 50:
-            st.info("ℹ️ Low confidence prediction. ECG & clinical tests advised.")
-
-# =====================================================
-# ================= PARKINSONS PAGE ===================
-# =====================================================
+# ===================== PARKINSON PAGE =====================
 if selected == "Parkinsons Prediction":
 
-    st.title("Parkinson's Disease Prediction using ML")
+    st.markdown("<div class='fade-in'><h1>Parkinson's Disease Prediction using ML</h1></div>", unsafe_allow_html=True)
 
     cols = st.columns(5)
     inputs = []
@@ -171,14 +381,13 @@ if selected == "Parkinsons Prediction":
         except:
             risk = 100 if prediction == 1 else 0
 
-        st.subheader(f"Parkinson's Risk Score: {risk:.2f}%")
+        st.subheader("Parkinson's Risk Score")
+        show_risk_bar(risk)
 
         if risk > 60:
             st.error("High Risk of Parkinson's Disease")
+            show_hospitals_if_needed("Parkinson", risk, city)
         elif risk > 30:
             st.warning("Moderate Risk of Parkinson's Disease")
         else:
             st.success("Low Risk of Parkinson's Disease")
-
-        if risk < 50:
-            st.info("ℹ️ Voice analysis confidence is low. Neurological evaluation recommended.")
