@@ -14,6 +14,7 @@ st.set_page_config(
 )
 
 # ===================== SMOOTH FADE ANIMATION =====================
+# Fade-in animation CSS
 st.markdown("""
 <style>
 .fade-in {
@@ -22,6 +23,25 @@ st.markdown("""
 @keyframes fadeIn {
     from { opacity: 0; transform: translateY(10px); }
     to { opacity: 1; transform: translateY(0); }
+}
+</style>
+""", unsafe_allow_html=True)
+
+
+# Hospital card hover CSS
+st.markdown("""
+<style>
+.hospital-card {
+    padding: 18px;
+    border-radius: 14px;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.1);
+    backdrop-filter: blur(8px);
+    transition: all 0.3s ease;
+}
+.hospital-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 8px 25px rgba(0,0,0,0.15);
 }
 </style>
 """, unsafe_allow_html=True)
@@ -94,14 +114,66 @@ def show_color_therapy(disease):
     """, unsafe_allow_html=True)
 
 def show_acupressure(disease):
-    points = {
-        "Diabetes": "SP6 (Inner leg – 4 fingers above ankle)",
-        "Heart Disease": "PC6 (Inner wrist – 3 fingers below palm)",
-        "Parkinson": "GV20 (Top center of head)"
-    }
-    st.subheader("🖐 Acupressure Guidance")
-    st.info(f"Suggested Point: {points.get(disease)}")
-    st.write("Apply gentle pressure for 1–2 minutes while breathing slowly.")
+
+    if disease == "Heart Disease":
+        image_url = "https://i.imgur.com/3XjKX8N.png"
+        top, left = "150px", "135px"
+        point = "PC6 (Inner Wrist)"
+        instruction = "Use your thumb and apply firm circular pressure for 1–2 minutes."
+
+    elif disease == "Diabetes":
+        image_url = "https://i.imgur.com/4Q9Z1Zm.png"
+        top, left = "220px", "155px"
+        point = "SP6 (Inner Leg)"
+        instruction = "Press gently using steady circular motion for 2 minutes."
+
+    elif disease == "Parkinson":
+        image_url = "https://i.imgur.com/qkdpN.jpg"
+        top, left = "40px", "140px"
+        point = "GV20 (Top Center of Head)"
+        instruction = "Apply gentle upward pressure for 1–2 minutes."
+
+    else:
+        return
+
+    st.subheader("🖐 Animated Acupressure Guidance")
+
+    st.markdown(f"""
+    <style>
+    .body-container {{
+        position: relative;
+        width: 300px;
+        margin: auto;
+    }}
+
+    .pulse-dot {{
+        position: absolute;
+        top: {top};
+        left: {left};
+        width: 25px;
+        height: 25px;
+        background: red;
+        border-radius: 50%;
+        animation: pulse 1.5s infinite;
+    }}
+
+    @keyframes pulse {{
+        0% {{ transform: scale(1); opacity: 0.8; }}
+        50% {{ transform: scale(1.6); opacity: 0.3; }}
+        100% {{ transform: scale(1); opacity: 0.8; }}
+    }}
+    </style>
+
+    <div class="body-container">
+        <img src="{image_url}" width="300">
+        <div class="pulse-dot"></div>
+    </div>
+
+    <p style="text-align:center;">
+    📍 <b>{point}</b><br>
+    {instruction}
+    </p>
+    """, unsafe_allow_html=True)
 
 def show_lifestyle(disease):
     st.subheader("🧘 Lifestyle Recommendations")
@@ -202,7 +274,9 @@ def get_nearby_hospitals(lat, lon):
     return hospitals[:8]
 
 # ===================== SHOW HOSPITALS =====================
+# ===================== SHOW HOSPITALS =====================
 def show_hospitals_if_needed(disease, risk, city):
+
     if risk > 60 and city:
 
         specialist = get_specialist(disease)
@@ -211,34 +285,39 @@ def show_hospitals_if_needed(disease, risk, city):
         lat, lon = get_coordinates(city)
 
         if lat and lon:
+
             with st.spinner("🔍 Searching nearby healthcare centers..."):
                 hospitals = get_nearby_hospitals(lat, lon)
 
             if hospitals:
-                st.subheader("🏥 Nearby Healthcare Centers (15km radius)")
-                st.success("💡 Click 'Open in Google Maps' to view ratings & full details.")
 
-                for hospital in hospitals:
+                st.subheader("🏥 Nearby Healthcare Centers (15km radius)")
+                st.success("💡 Click hospital name to view details.")
+
+                for i, hospital in enumerate(hospitals):
+
                     maps_link = f"https://www.google.com/maps/search/?api=1&query={hospital['lat']},{hospital['lon']}"
                     directions_link = f"https://www.google.com/maps/dir/?api=1&destination={hospital['lat']},{hospital['lon']}"
 
-                    st.markdown(f"""
-                    ---
-                    ### 🏥 {hospital['name']}
-                    📍 Distance: **{hospital['distance']} km**  
-                    🏠 Address: {hospital['address']}  
-                    ☎ Contact: {hospital['phone']}  
-                    🔗 [Open in Google Maps]({maps_link})  
-                    🧭 [Get Directions]({directions_link})
-                    """)
+                    with st.expander(f"🏥 {hospital['name']} • {hospital['distance']} km"):
+
+                        st.markdown(f"""
+                        <div class="hospital-card">
+                        📍 <b>Distance:</b> {hospital['distance']} km <br>
+                        🏠 <b>Address:</b> {hospital['address']} <br>
+                        ☎ <b>Contact:</b> {hospital['phone']} <br><br>
+                        🔗 <a href="{maps_link}" target="_blank">Open in Google Maps</a><br>
+                        🧭 <a href="{directions_link}" target="_blank">Get Directions</a>
+                        </div>
+                        """, unsafe_allow_html=True)
 
             else:
                 st.warning("No hospitals found nearby.")
+
         else:
             st.error("City not found. Please enter a valid city name.")
 
-        show_therapy_modules(disease)
-
+        
 # ===================== SIDEBAR =====================
 with st.sidebar:
     selected = option_menu(
@@ -293,6 +372,7 @@ if selected == 'Diabetes Prediction':
         if risk > 60:
             st.error("High Risk of Diabetes")
             show_hospitals_if_needed("Diabetes", risk, city)
+            show_therapy_modules("Diabetes")
         elif risk > 30:
             st.warning("Moderate Risk of Diabetes")
         else:
@@ -347,6 +427,7 @@ if selected == 'Heart Disease Prediction':
         if risk > 60:
             st.error("High Risk of Heart Disease")
             show_hospitals_if_needed("Heart Disease", risk, city)
+            show_therapy_modules("Heart Disease")
         elif risk > 30:
             st.warning("Moderate Risk of Heart Disease")
         else:
@@ -387,6 +468,7 @@ if selected == "Parkinsons Prediction":
         if risk > 60:
             st.error("High Risk of Parkinson's Disease")
             show_hospitals_if_needed("Parkinson", risk, city)
+            show_therapy_modules("Parkinson")
         elif risk > 30:
             st.warning("Moderate Risk of Parkinson's Disease")
         else:
